@@ -35,6 +35,7 @@ type Consumer struct {
 	errors        chan error
 	partitions    chan PartitionConsumer
 	notifications chan *Notification
+	releaseOK     chan struct{}
 
 	commitMu sync.Mutex
 }
@@ -87,6 +88,7 @@ func NewConsumerFromClient(client *Client, groupID string, topics []string) (*Co
 		errors:        make(chan error, client.config.ChannelBufferSize),
 		partitions:    make(chan PartitionConsumer, 1),
 		notifications: make(chan *Notification),
+		releaseOK:     make(chan struct{}),
 	}
 	if err := c.client.RefreshCoordinator(groupID); err != nil {
 		client.release()
@@ -205,6 +207,13 @@ func (c *Consumer) ResetOffsets(s *OffsetStash) {
 // Subscriptions returns the consumed topics and partitions
 func (c *Consumer) Subscriptions() map[string][]int32 {
 	return c.subs.Info()
+}
+
+// ReleaseOK returns a channel that can be written to to notify the Consumer
+// that it is safe to complete the release process before Synchronization.DwellTime.
+// This is useful if the client knows all partitions have been committed.
+func (c *Consumer) ReleaseOK() chan<- struct{} {
+	return c.releaseOK
 }
 
 // CommitOffsets allows to manually commit previously marked offsets. By default there is no
@@ -522,6 +531,7 @@ func (c *Consumer) release() (err error) {
 	select {
 	case <-c.dying:
 	case <-timeout.C:
+	case <-c.releaseOK:
 	}
 
 	// Commit offsets, continue on errors
