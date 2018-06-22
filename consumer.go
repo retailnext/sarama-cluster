@@ -529,7 +529,6 @@ func (c *Consumer) release() (err error) {
 	defer timeout.Stop()
 
 	select {
-	case <-c.dying:
 	case <-timeout.C:
 	case <-c.releaseOK:
 	}
